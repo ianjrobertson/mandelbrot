@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mandelbrot Set</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 {
+            text-align: center;
+            color: #4a9eff;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        canvas {
+            border: 2px solid #4a9eff;
+            background: #000;
+            max-width: 100%;
+            height: auto;
+        }
+        .status {
+            font-size: 18px;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+            min-width: 200px;
+            text-align: center;
+        }
+        .loading {
+            color: #ffa500;
+        }
+        .ready {
+            color: #4caf50;
+        }
+        .error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mandelbrot Set Viewer</h1>
+        <div id="status" class="status loading">Loading WebAssembly module...</div>
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <div style="margin-top: 20px;">
+            <button onclick="generateCustom(-2.5, 1.5, -2.0, 2.0, 100, 800)" 
+                    style="padding: 10px 20px; font-size: 16px; background: #4a9eff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px;">
+                Standard View
+            </button>
+            <button onclick="generateCustom(-0.8, -0.7, 0.0, 0.1, 200, 800)" 
+                    style="padding: 10px 20px; font-size: 16px; background: #4a9eff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px;">
+                Zoom In
+            </button>
+            <button onclick="generateCustom(-2.0, 2.0, -2.0, 2.0, 50, 400)" 
+                    style="padding: 10px 20px; font-size: 16px; background: #4a9eff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px;">
+                Low Res
+            </button>
+        </div>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        // Configure the Emscripten module
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            print: function(text) {
+                console.log('stdout: ' + text);
+                document.getElementById('output').innerHTML += text + '<br>';
+            },
+            printErr: function(text) {
+                console.error('stderr: ' + text);
+                document.getElementById('output').innerHTML += '<span style="color: red;">' + text + '</span><br>';
+            },
+            onRuntimeInitialized: function() {
+                console.log('Mandelbrot WebAssembly module loaded successfully!');
+                document.getElementById('status').textContent = 'Ready! Generating Mandelbrot set...';
+                document.getElementById('status').className = 'status ready';
+                
+                // Generate and display the Mandelbrot set
+                generateAndDisplay();
+            },
+            onAbort: function(what) {
+                console.error('Aborted:', what);
+                document.getElementById('status').textContent = 'Error: Module failed to load';
+                document.getElementById('status').className = 'status error';
+            }
+        };
+
+        // Error handling for script loading
+        window.addEventListener('error', function(e) {
+            console.error('Script error:', e);
+            document.getElementById('status').textContent = 'Error: Failed to load mandelbrot.js';
+            document.getElementById('status').className = 'status error';
+        });
+
+        // Function to generate and display the Mandelbrot set
+        function generateAndDisplay() {
+            try {
+                // Parameters for the Mandelbrot set
+                const xmin = -2.5;
+                const xmax = 1.5;
+                const ymin = -2.0;
+                const ymax = 2.0;
+                const maxiter = 100;
+                const xres = 800;
+                
+                console.log('Calling generate_mandelbrot...');
+                
+                // Call the WebAssembly function
+                const pixelPtr = Module._generate_mandelbrot(xmin, xmax, ymin, ymax, maxiter, xres);
+                
+                if (pixelPtr === 0) {
+                    throw new Error('Failed to generate Mandelbrot set - null pointer returned');
+                }
+                
+                // You'll need to get the actual dimensions from your C code
+                // For now, calculating height based on aspect ratio
+                const yres = Math.floor(xres * (ymax - ymin) / (xmax - xmin));
+                
+                console.log(`Generated ${xres}x${yres} Mandelbrot set`);
+                
+                // Get the pixel data from WebAssembly memory
+                const pixelData = new Uint8ClampedArray(
+                    Module.HEAPU8.buffer, 
+                    pixelPtr, 
+                    xres * yres * 4
+                );
+                
+                // Create ImageData and draw to canvas
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Resize canvas to match generated image
+                canvas.width = xres;
+                canvas.height = yres;
+                
+                // Create ImageData object
+                const imageData = new ImageData(pixelData, xres, yres);
+                
+                // Draw to canvas
+                ctx.putImageData(imageData, 0, 0);
+                
+                console.log('Mandelbrot set displayed successfully!');
+                
+                // Free the allocated memory (important!)
+                Module._free(pixelPtr);
+                
+            } catch (error) {
+                console.error('Error generating Mandelbrot set:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+                document.getElementById('status').className = 'status error';
+            }
+        }
+
+        // Function to generate with custom parameters
+        function generateCustom(xmin, xmax, ymin, ymax, maxiter, xres) {
+            try {
+                const pixelPtr = Module._generate_mandelbrot(xmin, xmax, ymin, ymax, maxiter, xres);
+                
+                if (pixelPtr === 0) {
+                    throw new Error('Failed to generate Mandelbrot set');
+                }
+                
+                const yres = Math.floor(xres * (ymax - ymin) / (xmax - xmin));
+                const pixelData = new Uint8ClampedArray(Module.HEAPU8.buffer, pixelPtr, xres * yres * 4);
+                
+                const canvas = document.getElementById('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = xres;
+                canvas.height = yres;
+                
+                const imageData = new ImageData(pixelData, xres, yres);
+                ctx.putImageData(imageData, 0, 0);
+                
+                Module._free(pixelPtr);
+                
+                return { width: xres, height: yres };
+            } catch (error) {
+                console.error('Error:', error);
+                return null;
+            }
+        }
+    </script>
+    
+    <!-- Load the Emscripten-generated JavaScript file -->
+    <script src="mandelbrot.js"></script>
+</body>
+</html>
