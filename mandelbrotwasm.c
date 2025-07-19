@@ -2,7 +2,7 @@
   WebAssembly adaptation of Mandelbrot set generator
   
   Compile with:
-  emcc mandelbrot.c -o mandelbrot.js \
+  emcc mandelbrotwasm.c -o mandelbrot.js \
     -s WASM=1 \
     -s EXPORTED_FUNCTIONS='["_generate_mandelbrot", "_free_pixels", "_get_dimensions"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]' \
